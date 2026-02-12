@@ -23,8 +23,9 @@ export SATGATE_ADMIN_TOKEN=sgk_your_token
 
 # For SatGate Cloud
 export SATGATE_SURFACE=cloud
-export SATGATE_GATEWAY=https://cloud.satgate.io
-export SATGATE_SESSION_TOKEN=eyJ...
+export SATGATE_GATEWAY=https://satgate-gateway.fly.dev
+export SATGATE_BEARER_TOKEN=sg_your_api_key
+export SATGATE_TENANT=your-tenant-slug
 ```
 
 Always run `satgate status` first to confirm you're targeting the right gateway.
