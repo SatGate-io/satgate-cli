@@ -8,7 +8,7 @@ GOFLAGS=-trimpath
 BUILD_DIR=bin
 RELEASE_DIR=$(BUILD_DIR)/release
 
-.PHONY: build release clean test
+.PHONY: build release clean test publish-skill
 
 build:
 	@echo "Building $(BINARY) $(VERSION)..."
@@ -30,6 +30,13 @@ release:
 
 test:
 	go test -v -race ./...
+
+publish-skill:
+	@rm -rf /tmp/satgate-skill && mkdir -p /tmp/satgate-skill
+	@cp SKILL.md /tmp/satgate-skill/ && cp -r scripts /tmp/satgate-skill/
+	clawhub publish /tmp/satgate-skill --slug satgate --name "SatGate" --version $(VERSION)
+	@rm -rf /tmp/satgate-skill
+	@echo "✓ Published satgate@$(VERSION) to ClawHub"
 
 clean:
 	rm -rf $(BUILD_DIR)
