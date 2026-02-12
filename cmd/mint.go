@@ -156,22 +156,45 @@ Non-interactive: provide --agent, --budget, --expiry flags.`,
 
 		fmt.Println("\n✓ Token minted successfully")
 		fmt.Println("─────────────────────────────")
-		if id, ok := resp["id"]; ok {
+
+		// Cloud response wraps token in {"token": {...}, "macaroon_token": "..."}
+		tokenData := resp
+		if nested, ok := resp["token"].(map[string]interface{}); ok {
+			tokenData = nested
+		}
+
+		if id, ok := tokenData["id"]; ok {
 			fmt.Printf("  ID:       %v\n", id)
 		}
-		if token, ok := resp["token"]; ok {
-			fmt.Printf("  Token:    %v\n", token)
-		}
-		if mac, ok := resp["macaroon"]; ok {
-			fmt.Printf("  Macaroon: %v\n", mac)
-		}
 		fmt.Printf("  Agent:    %s\n", mintAgent)
+		if status, ok := tokenData["status"]; ok {
+			fmt.Printf("  Status:   %v\n", status)
+		}
 		if mintBudget > 0 {
 			fmt.Printf("  Budget:   $%.2f\n", mintBudget)
 		}
-		if mintExpiry != "" {
-			fmt.Printf("  Expires:  %s\n", mintExpiry)
+		if scope, ok := tokenData["scope"].(map[string]interface{}); ok {
+			if routes, ok := scope["routes"].([]interface{}); ok {
+				routeStrs := make([]string, len(routes))
+				for i, r := range routes {
+					routeStrs[i] = fmt.Sprintf("%v", r)
+				}
+				fmt.Printf("  Routes:   %s\n", strings.Join(routeStrs, ", "))
+			}
 		}
+		if exp, ok := tokenData["expires_at"]; ok {
+			fmt.Printf("  Expires:  %v\n", exp)
+		}
+		if mac, ok := resp["macaroon_token"]; ok && mac != "" {
+			fmt.Printf("  Macaroon: %v\n", mac)
+		} else if mac, ok := resp["macaroon"]; ok && mac != "" {
+			fmt.Printf("  Macaroon: %v\n", mac)
+		} else if token, ok := resp["token"]; ok {
+			if _, isMap := token.(map[string]interface{}); !isMap {
+				fmt.Printf("  Token:    %v\n", token)
+			}
+		}
+
 		fmt.Println("\n⚠️  Save the token/macaroon now — it won't be shown again.")
 
 		return nil

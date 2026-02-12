@@ -45,6 +45,7 @@ var tokensCmd = &cobra.Command{
 			BudgetLim float64 `json:"budget_limit_credits"`
 			BudgetSp  float64 `json:"budget_spent_credits"`
 			ExpiresAt string  `json:"expires_at"`
+			Depth     int     `json:"depth"`
 			Children  []tokenInfo `json:"children"`
 		}
 
@@ -101,8 +102,17 @@ var tokensCmd = &cobra.Command{
 			} else {
 				remaining = "unlimited"
 			}
+			// Indent name by depth for tree visualization
+			indent := ""
+			for i := 0; i < t.Depth; i++ {
+				indent += "  "
+			}
+			if t.Depth > 0 {
+				indent += "└ "
+			}
+			name := indent + t.Name
 			fmt.Fprintf(w, "%s\t%s\t%s\t$%.2f\t%s\t%s\n",
-				truncate(t.ID, 12), t.Name, status, t.Spent, remaining, truncate(t.ExpiresAt, 10))
+				truncate(t.ID, 16), name, status, t.Spent, remaining, truncate(t.ExpiresAt, 10))
 		}
 		w.Flush()
 
