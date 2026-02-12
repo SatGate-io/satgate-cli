@@ -121,7 +121,11 @@ var tokenCmd = &cobra.Command{
 			return err
 		}
 
-		data, code, err := c.Get("/admin/tokens/" + args[0])
+		path := "/admin/tokens/" + args[0]
+		if c.Surface() == "cloud" {
+			path = "/cloud/delegation-v2/token/" + args[0]
+		}
+		data, code, err := c.Get(path)
 		if err != nil {
 			return err
 		}

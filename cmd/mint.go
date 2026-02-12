@@ -19,6 +19,7 @@ var (
 	mintCurrency string
 	mintExpiry   string
 	mintRoutes   string
+	mintParent   string
 )
 
 var mintCmd = &cobra.Command{
@@ -60,27 +61,56 @@ Non-interactive: provide --agent, --budget, --expiry flags.`,
 			return fmt.Errorf("agent name is required")
 		}
 
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
 		// Build request
 		req := map[string]interface{}{
 			"name": mintAgent,
 		}
-		if mintBudget > 0 {
-			req["budget"] = mintBudget
-			if mintCurrency != "" {
-				req["currency"] = mintCurrency
+
+		if c.Surface() == "cloud" {
+			// Cloud uses credits (cents) and DelegateRequest format
+			if mintBudget > 0 {
+				req["budget_limit_credits"] = int64(mintBudget * 100) // dollars → credits
+			}
+			scope := map[string]interface{}{}
+			if mintRoutes != "" && mintRoutes != "*" {
+				routes := strings.Split(mintRoutes, ",")
+				for i := range routes {
+					routes[i] = strings.TrimSpace(routes[i])
+				}
+				scope["routes"] = routes
 			} else {
-				req["currency"] = "USD"
+				scope["routes"] = []string{"*"}
+			}
+			req["scope"] = scope
+			// Parent ID: default to root if not specified
+			if mintParent != "" {
+				req["parent_id"] = mintParent
+			}
+		} else {
+			// Gateway admin API format
+			if mintBudget > 0 {
+				req["budget"] = mintBudget
+				if mintCurrency != "" {
+					req["currency"] = mintCurrency
+				} else {
+					req["currency"] = "USD"
+				}
+			}
+			if mintRoutes != "" && mintRoutes != "*" {
+				routes := strings.Split(mintRoutes, ",")
+				for i := range routes {
+					routes[i] = strings.TrimSpace(routes[i])
+				}
+				req["routes"] = routes
 			}
 		}
 		if mintExpiry != "" {
 			req["expiry"] = mintExpiry
-		}
-		if mintRoutes != "" && mintRoutes != "*" {
-			routes := strings.Split(mintRoutes, ",")
-			for i := range routes {
-				routes[i] = strings.TrimSpace(routes[i])
-			}
-			req["routes"] = routes
 		}
 
 		if flagDry {
@@ -104,12 +134,11 @@ Non-interactive: provide --agent, --budget, --expiry flags.`,
 			return nil
 		}
 
-		c, err := client.New()
-		if err != nil {
-			return err
+		path := "/admin/tokens/mint"
+		if c.Surface() == "cloud" {
+			path = "/cloud/delegation-v2/delegate"
 		}
-
-		data, code, err := c.Post("/admin/tokens/mint", req)
+		data, code, err := c.Post(path, req)
 		if err != nil {
 			return err
 		}
@@ -155,5 +184,6 @@ func init() {
 	mintCmd.Flags().StringVar(&mintCurrency, "currency", "USD", "budget currency")
 	mintCmd.Flags().StringVar(&mintExpiry, "expiry", "", "token expiry (e.g. 30d, 24h)")
 	mintCmd.Flags().StringVar(&mintRoutes, "routes", "", "allowed routes (comma-separated)")
+	mintCmd.Flags().StringVar(&mintParent, "parent", "", "parent token ID (cloud surface, for delegation)")
 	rootCmd.AddCommand(mintCmd)
 }

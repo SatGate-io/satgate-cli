@@ -32,8 +32,13 @@ var revokeCmd = &cobra.Command{
 			return err
 		}
 
+		// Try to get token name for confirmation
 		tokenName := tokenID
-		detailData, detailCode, _ := c.Get("/admin/tokens/" + tokenID)
+		detailPath := "/admin/tokens/" + tokenID
+		if c.Surface() == "cloud" {
+			detailPath = "/cloud/delegation-v2/token/" + tokenID
+		}
+		detailData, detailCode, _ := c.Get(detailPath)
 		if detailCode == 200 {
 			var detail map[string]interface{}
 			json.Unmarshal(detailData, &detail)
@@ -47,7 +52,13 @@ var revokeCmd = &cobra.Command{
 			return nil
 		}
 
-		data, code, err := c.Delete("/admin/tokens/" + tokenID + "/revoke")
+		var data []byte
+		var code int
+		if c.Surface() == "cloud" {
+			data, code, err = c.Post("/cloud/delegation-v2/revoke/"+tokenID, nil)
+		} else {
+			data, code, err = c.Delete("/admin/tokens/" + tokenID + "/revoke")
+		}
 		if err != nil {
 			return err
 		}
