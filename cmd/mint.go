@@ -1,0 +1,159 @@
+package cmd
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/SatGate-io/satgate-cli/internal/client"
+	"github.com/SatGate-io/satgate-cli/internal/config"
+	"github.com/spf13/cobra"
+)
+
+var (
+	mintAgent    string
+	mintBudget   float64
+	mintCurrency string
+	mintExpiry   string
+	mintRoutes   string
+)
+
+var mintCmd = &cobra.Command{
+	Use:   "mint",
+	Short: "Mint a new capability token for an agent",
+	Long: `Mint a new macaroon capability token with budget, expiry, and route restrictions.
+
+Interactive mode (no flags): prompts for all fields.
+Non-interactive: provide --agent, --budget, --expiry flags.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+		printTarget(cfg)
+
+		// Interactive mode if no agent flag provided
+		if mintAgent == "" {
+			reader := bufio.NewReader(os.Stdin)
+
+			fmt.Print("  Agent name: ")
+			mintAgent, _ = reader.ReadString('\n')
+			mintAgent = strings.TrimSpace(mintAgent)
+
+			fmt.Print("  Budget (USD, 0 for unlimited): ")
+			budgetStr, _ := reader.ReadString('\n')
+			budgetStr = strings.TrimSpace(budgetStr)
+			if budgetStr != "" && budgetStr != "0" {
+				mintBudget, _ = strconv.ParseFloat(budgetStr, 64)
+			}
+
+			fmt.Print("  Expiry (e.g. 30d, 24h, or blank for none): ")
+			mintExpiry, _ = reader.ReadString('\n')
+			mintExpiry = strings.TrimSpace(mintExpiry)
+
+			fmt.Print("  Allowed routes (comma-separated, or * for all): ")
+			mintRoutes, _ = reader.ReadString('\n')
+			mintRoutes = strings.TrimSpace(mintRoutes)
+		}
+
+		if mintAgent == "" {
+			return fmt.Errorf("agent name is required")
+		}
+
+		// Build request
+		req := map[string]interface{}{
+			"name": mintAgent,
+		}
+		if mintBudget > 0 {
+			req["budget"] = mintBudget
+			if mintCurrency != "" {
+				req["currency"] = mintCurrency
+			} else {
+				req["currency"] = "USD"
+			}
+		}
+		if mintExpiry != "" {
+			req["expiry"] = mintExpiry
+		}
+		if mintRoutes != "" && mintRoutes != "*" {
+			routes := strings.Split(mintRoutes, ",")
+			for i := range routes {
+				routes[i] = strings.TrimSpace(routes[i])
+			}
+			req["routes"] = routes
+		}
+
+		if flagDry {
+			out, _ := json.MarshalIndent(req, "", "  ")
+			fmt.Printf("[DRY RUN] Would mint token:\n%s\n", string(out))
+			return nil
+		}
+
+		// Confirm
+		fmt.Fprintf(os.Stderr, "\n  Minting token for agent %q", mintAgent)
+		if mintBudget > 0 {
+			fmt.Fprintf(os.Stderr, " (budget: $%.2f)", mintBudget)
+		}
+		if mintExpiry != "" {
+			fmt.Fprintf(os.Stderr, " (expires: %s)", mintExpiry)
+		}
+		fmt.Fprintln(os.Stderr)
+
+		if !confirmAction("⚠️  Proceed?") {
+			fmt.Fprintln(os.Stderr, "Cancelled.")
+			return nil
+		}
+
+		c, err := client.New()
+		if err != nil {
+			return err
+		}
+
+		data, code, err := c.Post("/admin/tokens/mint", req)
+		if err != nil {
+			return err
+		}
+		if code != 200 && code != 201 {
+			return fmt.Errorf("API returned HTTP %d: %s", code, string(data))
+		}
+
+		if flagJSON {
+			fmt.Println(string(data))
+			return nil
+		}
+
+		var resp map[string]interface{}
+		json.Unmarshal(data, &resp)
+
+		fmt.Println("\n✓ Token minted successfully")
+		fmt.Println("─────────────────────────────")
+		if id, ok := resp["id"]; ok {
+			fmt.Printf("  ID:       %v\n", id)
+		}
+		if token, ok := resp["token"]; ok {
+			fmt.Printf("  Token:    %v\n", token)
+		}
+		if mac, ok := resp["macaroon"]; ok {
+			fmt.Printf("  Macaroon: %v\n", mac)
+		}
+		fmt.Printf("  Agent:    %s\n", mintAgent)
+		if mintBudget > 0 {
+			fmt.Printf("  Budget:   $%.2f\n", mintBudget)
+		}
+		if mintExpiry != "" {
+			fmt.Printf("  Expires:  %s\n", mintExpiry)
+		}
+		fmt.Println("\n⚠️  Save the token/macaroon now — it won't be shown again.")
+
+		return nil
+	},
+}
+
+func init() {
+	mintCmd.Flags().StringVar(&mintAgent, "agent", "", "agent name")
+	mintCmd.Flags().Float64Var(&mintBudget, "budget", 0, "budget ceiling in currency units")
+	mintCmd.Flags().StringVar(&mintCurrency, "currency", "USD", "budget currency")
+	mintCmd.Flags().StringVar(&mintExpiry, "expiry", "", "token expiry (e.g. 30d, 24h)")
+	mintCmd.Flags().StringVar(&mintRoutes, "routes", "", "allowed routes (comma-separated)")
+	rootCmd.AddCommand(mintCmd)
+}
