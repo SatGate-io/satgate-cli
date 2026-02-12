@@ -13,8 +13,13 @@ import (
 
 // Client wraps HTTP calls to the SatGate Admin API
 type Client struct {
-	cfg    *config.Config
-	http   *http.Client
+	cfg  *config.Config
+	http *http.Client
+}
+
+// Surface returns the configured surface
+func (c *Client) Surface() string {
+	return c.cfg.Surface
 }
 
 // New creates a new API client from current config

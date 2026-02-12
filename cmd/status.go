@@ -20,7 +20,11 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		data, code, err := c.Get("/admin/ping")
+		path := "/admin/ping"
+		if c.Surface() == "cloud" {
+			path = "/healthz"
+		}
+		data, code, err := c.Get(path)
 		if err != nil {
 			return fmt.Errorf("cannot reach gateway at %s: %w", cfg.Gateway, err)
 		}

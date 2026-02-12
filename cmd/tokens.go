@@ -19,7 +19,11 @@ var tokensCmd = &cobra.Command{
 			return err
 		}
 
-		data, code, err := c.Get("/admin/tokens")
+		path := "/admin/tokens"
+		if c.Surface() == "cloud" {
+			path = "/cloud/delegation-v2/tree"
+		}
+		data, code, err := c.Get(path)
 		if err != nil {
 			return err
 		}
@@ -32,36 +36,59 @@ var tokensCmd = &cobra.Command{
 			return nil
 		}
 
-		var resp struct {
-			Tokens []struct {
-				ID        string  `json:"id"`
-				Name      string  `json:"name"`
-				Status    string  `json:"status"`
-				Spent     float64 `json:"spent"`
-				Budget    float64 `json:"budget"`
-				ExpiresAt string  `json:"expires_at"`
-			} `json:"tokens"`
+		type tokenInfo struct {
+			ID        string  `json:"id"`
+			Name      string  `json:"name"`
+			Status    string  `json:"status"`
+			Spent     float64 `json:"spent"`
+			Budget    float64 `json:"budget"`
+			BudgetLim float64 `json:"budget_limit_credits"`
+			BudgetSp  float64 `json:"budget_spent_credits"`
+			ExpiresAt string  `json:"expires_at"`
+			Children  []tokenInfo `json:"children"`
 		}
-		if err := json.Unmarshal(data, &resp); err != nil {
-			// Try as raw array
-			var tokens []struct {
-				ID        string  `json:"id"`
-				Name      string  `json:"name"`
-				Status    string  `json:"status"`
-				Spent     float64 `json:"spent"`
-				Budget    float64 `json:"budget"`
-				ExpiresAt string  `json:"expires_at"`
+
+		var tokens []tokenInfo
+
+		// Try cloud tree format: {"tree": [...]}
+		var treeResp struct {
+			Tree []tokenInfo `json:"tree"`
+		}
+		if err := json.Unmarshal(data, &treeResp); err == nil && len(treeResp.Tree) > 0 {
+			// Flatten tree
+			var flatten func(nodes []tokenInfo)
+			flatten = func(nodes []tokenInfo) {
+				for _, n := range nodes {
+					// Convert credits to dollars (credits are cents)
+					if n.BudgetLim > 0 && n.Budget == 0 {
+						n.Budget = n.BudgetLim / 100
+					}
+					if n.BudgetSp > 0 && n.Spent == 0 {
+						n.Spent = n.BudgetSp / 100
+					}
+					tokens = append(tokens, n)
+					if len(n.Children) > 0 {
+						flatten(n.Children)
+					}
+				}
 			}
-			if err2 := json.Unmarshal(data, &tokens); err2 != nil {
-				return fmt.Errorf("parsing response: %w", err)
+			flatten(treeResp.Tree)
+		} else {
+			// Try admin format: {"tokens": [...]} or raw array
+			var resp struct {
+				Tokens []tokenInfo `json:"tokens"`
 			}
-			resp.Tokens = tokens
+			if err := json.Unmarshal(data, &resp); err == nil {
+				tokens = resp.Tokens
+			} else {
+				json.Unmarshal(data, &tokens)
+			}
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "ID\tNAME\tSTATUS\tSPENT\tBUDGET\tEXPIRES")
 		fmt.Fprintln(w, "──\t────\t──────\t─────\t──────\t───────")
-		for _, t := range resp.Tokens {
+		for _, t := range tokens {
 			status := t.Status
 			if status == "revoked" {
 				status = "⛔ revoked"
@@ -79,7 +106,7 @@ var tokensCmd = &cobra.Command{
 		}
 		w.Flush()
 
-		fmt.Fprintf(os.Stderr, "\n%d tokens total\n", len(resp.Tokens))
+		fmt.Fprintf(os.Stderr, "\n%d tokens total\n", len(tokens))
 		return nil
 	},
 }

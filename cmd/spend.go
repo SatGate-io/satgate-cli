@@ -26,16 +26,21 @@ var spendCmd = &cobra.Command{
 			return err
 		}
 
-		path := "/admin/spend"
-		if spendAgent != "" {
-			path += "?agent=" + spendAgent
-		}
-		if spendPeriod != "" {
-			sep := "?"
+		var path string
+		if c.Surface() == "cloud" {
+			path = "/cloud/delegation-v2/cost-rollups"
+		} else {
+			path = "/admin/spend"
 			if spendAgent != "" {
-				sep = "&"
+				path += "?agent=" + spendAgent
 			}
-			path += sep + "period=" + spendPeriod
+			if spendPeriod != "" {
+				sep := "?"
+				if spendAgent != "" {
+					sep = "&"
+				}
+				path += sep + "period=" + spendPeriod
+			}
 		}
 
 		data, code, err := c.Get(path)
@@ -51,7 +56,35 @@ var spendCmd = &cobra.Command{
 			return nil
 		}
 
-		// Try to parse as org summary
+		// Try cloud cost-rollups format first
+		var rollupResp struct {
+			Rollups []struct {
+				CostCenter     string  `json:"costCenter"`
+				Department     string  `json:"department"`
+				TotalAllocated float64 `json:"totalAllocated"`
+				TotalConsumed  float64 `json:"totalConsumed"`
+				TokenCount     int     `json:"tokenCount"`
+				PercentUsed    float64 `json:"percentUsed"`
+			} `json:"rollups"`
+		}
+		if err := json.Unmarshal(data, &rollupResp); err == nil && len(rollupResp.Rollups) > 0 {
+			fmt.Println("Cost Center Spend")
+			fmt.Println("─────────────────────────────")
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "COST CENTER\tDEPARTMENT\tCONSUMED\tALLOCATED\tUTILIZATION")
+			fmt.Fprintln(w, "───────────\t──────────\t────────\t─────────\t───────────")
+			for _, r := range rollupResp.Rollups {
+				consumed := fmt.Sprintf("$%.2f", r.TotalConsumed/100) // credits → dollars
+				allocated := fmt.Sprintf("$%.2f", r.TotalAllocated/100)
+				util := fmt.Sprintf("%.1f%%", r.PercentUsed)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.CostCenter, r.Department, consumed, allocated, util)
+			}
+			w.Flush()
+			return nil
+		}
+
+		// Try admin format: org summary
 		var orgResp struct {
 			TotalAllocated float64 `json:"total_allocated"`
 			TotalConsumed  float64 `json:"total_consumed"`

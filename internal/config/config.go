@@ -11,12 +11,13 @@ import (
 
 // Config holds CLI configuration
 type Config struct {
-	Surface     string `yaml:"surface"`      // gateway | cloud
-	Gateway     string `yaml:"gateway"`      // gateway admin URL
-	AdminToken  string `yaml:"admin_token"`  // X-Admin-Token (gateway surface)
-	BearerToken string `yaml:"bearer_token"` // Bearer token (cloud surface)
-	Tenant      string `yaml:"tenant"`       // tenant slug (cloud surface)
-	Format      string `yaml:"format"`       // table | json | yaml
+	Surface      string `yaml:"surface"`       // gateway | cloud
+	Gateway      string `yaml:"gateway"`       // gateway admin URL
+	AdminToken   string `yaml:"admin_token"`   // X-Admin-Token (gateway surface)
+	BearerToken  string `yaml:"bearer_token"`  // Bearer token (cloud surface)
+	SessionToken string `yaml:"session_token"` // Session JWT (cloud surface, from magic link)
+	Tenant       string `yaml:"tenant"`        // tenant slug (cloud surface)
+	Format       string `yaml:"format"`        // table | json | yaml
 }
 
 var current *Config
@@ -63,6 +64,9 @@ func Load(cfgFile string) {
 	if v := os.Getenv("SATGATE_TENANT"); v != "" {
 		cfg.Tenant = v
 	}
+	if v := os.Getenv("SATGATE_SESSION_TOKEN"); v != "" {
+		cfg.SessionToken = v
+	}
 	if v := os.Getenv("SATGATE_FORMAT"); v != "" {
 		cfg.Format = v
 	}
@@ -90,6 +94,9 @@ func Load(cfgFile string) {
 // AuthHeader returns the appropriate auth header key and value
 func (c *Config) AuthHeader() (string, string) {
 	if c.Surface == "cloud" {
+		if c.SessionToken != "" {
+			return "Cookie", fmt.Sprintf("satgate_session=%s", c.SessionToken)
+		}
 		return "Authorization", fmt.Sprintf("Bearer %s", c.BearerToken)
 	}
 	return "X-Admin-Token", c.AdminToken
@@ -100,8 +107,8 @@ func (c *Config) Validate() error {
 	if c.Gateway == "" {
 		return fmt.Errorf("gateway URL not configured. Run 'satgate configure' or set SATGATE_GATEWAY")
 	}
-	if c.Surface == "cloud" && c.BearerToken == "" {
-		return fmt.Errorf("bearer token not configured for cloud surface. Set SATGATE_BEARER_TOKEN")
+	if c.Surface == "cloud" && c.BearerToken == "" && c.SessionToken == "" {
+		return fmt.Errorf("auth not configured for cloud surface. Set SATGATE_SESSION_TOKEN or SATGATE_BEARER_TOKEN")
 	}
 	if c.Surface == "gateway" && c.AdminToken == "" {
 		return fmt.Errorf("admin token not configured. Set SATGATE_ADMIN_TOKEN")

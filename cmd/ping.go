@@ -21,7 +21,12 @@ var pingCmd = &cobra.Command{
 			return nil
 		}
 
-		_, code, err := c.Get("/admin/ping")
+		path := "/admin/ping"
+		if c.Surface() == "cloud" {
+			path = "/healthz"
+		}
+
+		_, code, err := c.Get(path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "✗ %s unreachable: %v\n", cfg.Gateway, err)
 			os.Exit(1)
